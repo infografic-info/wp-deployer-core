@@ -3,8 +3,10 @@
     "description": "Reusable Deployer core for WordPress (Bedrock and Native) with EasyEngine provisioning",
     "type": "library",
     "license": "MIT",
-    "version": "0.0.0",
-    "bin": ["bin/sync-templates"],
+    "version": "1.0.0",
+    "bin": [
+        "bin/sync-templates"
+    ],
     "authors": [
         {
             "name": "Infografic",
