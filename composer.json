@@ -10,7 +10,11 @@
     "authors": [
         {
             "name": "Infografic",
-            "email": "dev@infografic.dev.br"
+            "email": "developer@infografic.com.br"
+        },
+        {
+            "name": "Rodrigo Gomes",
+            "email": "rodrigo@infografic.com.br"
         }
     ],
     "require": {
