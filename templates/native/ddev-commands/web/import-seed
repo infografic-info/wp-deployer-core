@@ -1,0 +1,29 @@
+#!/bin/bash
+#ddev-silent-no-warn
+## Description: Importa o banco de dados inicial (init/data/db.sql.gz) via WP-CLI, apenas se o WordPress ainda não estiver instalado
+## Usage: import-seed
+
+set -euo pipefail
+
+SEED="/var/www/html/init/data/db.sql.gz"
+
+if ! command -v wp >/dev/null 2>&1; then
+  echo "wp CLI not available. Skipping seed import."
+  exit 0
+fi
+
+if wp core is-installed --path=/var/www/html/web >/dev/null 2>&1; then
+  echo "Database already installed. Skipping seed import."
+  exit 0
+fi
+
+if [ ! -f "$SEED" ]; then
+  echo "Seed file not found at $SEED. Skipping."
+  exit 0
+fi
+
+echo "Importing seed database from $SEED..."
+
+gunzip -c "$SEED" | wp db import --path=/var/www/html/web -
+
+echo "Seed import completed."

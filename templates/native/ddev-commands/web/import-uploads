@@ -1,0 +1,46 @@
+#!/bin/bash
+#ddev-silent-no-warn
+## Description: Importa uploads e cache webp-express de init/data/ para web/wp-content/, apenas se os diretórios estiverem vazios
+## Usage: import-uploads
+
+set -euo pipefail
+
+UPLOADS_ARCHIVE="/var/www/html/init/data/uploads.tar.gz"
+UPLOADS_DIR="/var/www/html/web/wp-content/uploads"
+WEBP_ARCHIVE="/var/www/html/init/data/webp-express.tar.gz"
+WEBP_DIR="/var/www/html/web/wp-content/webp-express"
+
+if [ ! -f "$UPLOADS_ARCHIVE" ] && [ ! -f "$WEBP_ARCHIVE" ]; then
+  echo "No uploads/webp-express archives found in /var/www/html/init/data. Skipping."
+  exit 0
+fi
+
+if ! command -v tar >/dev/null 2>&1; then
+  echo "tar not available. Skipping import."
+  exit 0
+fi
+
+import_archive_if_empty() {
+  local archive="$1"
+  local target_dir="$2"
+  local label="$3"
+
+  if [ ! -f "$archive" ]; then
+    echo "$label archive not found at $archive. Skipping."
+    return
+  fi
+
+  mkdir -p "$target_dir"
+
+  if find "$target_dir" -mindepth 1 -maxdepth 1 ! -name '.gitkeep' | read -r _; then
+    echo "$label directory is not empty. Skipping import."
+    return
+  fi
+
+  echo "Importing $label from $archive..."
+  tar -xzf "$archive" -C /var/www/html
+  echo "$label import completed."
+}
+
+import_archive_if_empty "$UPLOADS_ARCHIVE" "$UPLOADS_DIR" "Uploads"
+import_archive_if_empty "$WEBP_ARCHIVE" "$WEBP_DIR" "webp-express"

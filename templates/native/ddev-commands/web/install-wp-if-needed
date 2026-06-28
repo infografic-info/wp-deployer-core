@@ -1,0 +1,124 @@
+#!/bin/bash
+#ddev-silent-no-warn
+## Description: Instala o WordPress (Native) via WP-CLI usando variáveis do .env, apenas se ainda não estiver instalado
+## Usage: install-wp-if-needed
+
+set -euo pipefail
+
+PROJECT_ROOT="/var/www/html"
+CORE_PATH="${PROJECT_ROOT}/web"
+ENV_FILE="${PROJECT_ROOT}/.env"
+
+if ! command -v wp >/dev/null 2>&1; then
+  echo "wp CLI not available. Skipping WordPress install."
+  exit 0
+fi
+
+if [ ! -f "${CORE_PATH}/wp-settings.php" ]; then
+  echo "WordPress core not found in ${CORE_PATH} (run composer install). Skipping install."
+  exit 0
+fi
+
+if wp core is-installed --path="${CORE_PATH}" >/dev/null 2>&1; then
+  echo "WordPress already installed. Skipping install."
+  exit 0
+fi
+
+if [ -f "$ENV_FILE" ]; then
+  set +u  # .env may contain double-quoted values with $VAR references not defined here
+  set -a
+  # shellcheck disable=SC1090
+  . "$ENV_FILE"
+  set +a
+  set -u
+
+  # Re-read WP_ADMIN_PASSWORD raw to preserve special characters (e.g. $) that
+  # bash source silently expands when the value is double-quoted in .env.
+  _raw_line=$(grep -E '^WP_ADMIN_PASSWORD=' "$ENV_FILE" | tail -1 || true)
+  if [ -n "$_raw_line" ]; then
+    _raw="${_raw_line#WP_ADMIN_PASSWORD=}"
+    case "$_raw" in
+      '"'*'"') _raw="${_raw:1:${#_raw}-2}" ;;
+      "'"*"'") _raw="${_raw:1:${#_raw}-2}" ;;
+    esac
+    WP_ADMIN_PASSWORD="$_raw"
+  fi
+  unset _raw_line _raw
+else
+  echo ".env not found at ${ENV_FILE}. Using defaults for WP install."
+fi
+
+WP_URL="${WP_HOME:-${DDEV_PRIMARY_URL:-http://localhost}}"
+WP_TITLE="${WP_TITLE:-WP Deployer}"
+WP_ADMIN_USER="${WP_ADMIN_USER:-admin}"
+WP_ADMIN_EMAIL="${WP_ADMIN_EMAIL:-admin@example.com}"
+WP_LANG="${WP_LANG:-}"
+WP_TIMEZONE="${WP_TIMEZONE:-}"
+
+if [ -z "${WP_ADMIN_PASSWORD:-}" ]; then
+  echo "WP_ADMIN_PASSWORD is not set. Skipping WordPress install."
+  exit 0
+fi
+
+echo "Installing WordPress (Native) with wp CLI..."
+install_args=(
+  --path="${CORE_PATH}"
+  --url="${WP_URL}"
+  --title="${WP_TITLE}"
+  --admin_user="${WP_ADMIN_USER}"
+  --admin_password="${WP_ADMIN_PASSWORD}"
+  --admin_email="${WP_ADMIN_EMAIL}"
+  --skip-email
+)
+
+WPLANG_SHIM=""
+if [ -n "$WP_LANG" ] && [ "$WP_LANG" != "en_US" ]; then
+  LANG_DIR="${PROJECT_ROOT}/web/wp-content/languages"
+
+  # wp_install_defaults() creates default content (post/page/category) using the
+  # locale loaded at bootstrap. On a fresh install the WPLANG option doesn't exist
+  # yet, so WP bootstraps in en_US even when --locale is passed (the flag only writes
+  # the option after defaults are already generated). To get content in the right
+  # language we must: 1) have the language pack on disk, and
+  # 2) force the bootstrap locale with a WPLANG constant before WP loads.
+  if [ ! -f "${LANG_DIR}/${WP_LANG}.mo" ]; then
+    echo "Language pack '${WP_LANG}' not on disk. Bootstrapping to fetch it..."
+    # `wp language core install` needs an installed site, so do a throwaway install
+    # to pull the pack (it lands on disk and survives the reset), then start over.
+    wp core install "${install_args[@]}" >/dev/null
+    wp language core install "$WP_LANG" --path="${CORE_PATH}" >/dev/null 2>&1 || true
+    wp db reset --yes --path="${CORE_PATH}" >/dev/null
+  fi
+
+  if [ -f "${LANG_DIR}/${WP_LANG}.mo" ]; then
+    WPLANG_SHIM="$(mktemp /tmp/wplang-shim.XXXXXX)"
+    printf "<?php define('WPLANG', '%s');\n" "${WP_LANG}" > "${WPLANG_SHIM}"
+    install_args+=(--require="${WPLANG_SHIM}" --locale="${WP_LANG}")
+  else
+    echo "Warning: language pack '${WP_LANG}' unavailable; default content will be in English."
+    install_args+=(--locale="${WP_LANG}")
+  fi
+fi
+
+wp core install "${install_args[@]}"
+[ -n "$WPLANG_SHIM" ] && rm -f "$WPLANG_SHIM"
+
+if [ -n "$WP_TIMEZONE" ]; then
+  echo "Setting WordPress timezone to '${WP_TIMEZONE}'..."
+  wp option update timezone_string "$WP_TIMEZONE" --path="${CORE_PATH}" >/dev/null
+  # Keep timezone_string as source of truth when configured.
+  wp option delete gmt_offset --path="${CORE_PATH}" >/dev/null 2>&1 || true
+fi
+
+# Safety net: make sure the locale is installed and active even if the install
+# above ran without it (e.g. the language pack could not be fetched).
+if [ -n "$WP_LANG" ] && [ "$WP_LANG" != "en_US" ]; then
+  echo "Activating WordPress locale '${WP_LANG}'..."
+  if ! wp language core activate "$WP_LANG" --path="${CORE_PATH}" >/dev/null 2>&1; then
+    echo "Locale '${WP_LANG}' not available yet. Installing language pack..."
+    wp language core install "$WP_LANG" --path="${CORE_PATH}" >/dev/null 2>&1 || true
+    wp language core activate "$WP_LANG" --path="${CORE_PATH}" >/dev/null 2>&1 || true
+  fi
+fi
+
+echo "WordPress install completed."

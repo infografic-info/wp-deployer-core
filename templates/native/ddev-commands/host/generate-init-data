@@ -1,0 +1,40 @@
+#!/bin/bash
+#ddev-silent-no-warn
+## Description: Export database and uploads to init/data for production deployment
+## Usage: generate-init-data
+## Example: ddev generate-init-data
+
+set -euo pipefail
+
+DATA_DIR="${DDEV_APPROOT:-/var/www/html}/init/data"
+mkdir -p "$DATA_DIR"
+
+APPROOT="${DDEV_APPROOT:-/var/www/html}"
+
+echo "==> Exporting database..."
+if [[ "${DDEV_APPROOT:-}" == "/var/www/html" ]]; then
+    # Dentro do container DDEV: conecta diretamente ao serviço db
+    MYSQL_PWD="root" mysqldump -u root -h "${MYSQL_HOST:-db}" "${MYSQL_DATABASE:-db}" > "$DATA_DIR/db.sql"
+else
+    # No host: usa ddev exec para rodar dentro do container db
+    ddev exec mysqldump -u root -proot db > "$DATA_DIR/db.sql"
+fi
+gzip -c "$DATA_DIR/db.sql" > "$DATA_DIR/db.sql.gz"
+echo "    Saved: init/data/db.sql"
+echo "    Saved: init/data/db.sql.gz"
+
+echo "==> Exporting uploads..."
+tar -czf "$DATA_DIR/uploads.tar.gz" -C "$APPROOT" web/wp-content/uploads
+echo "    Saved: init/data/uploads.tar.gz"
+
+WEBP_EXPRESS_DIR="$APPROOT/web/wp-content/webp-express"
+if [[ -d "$WEBP_EXPRESS_DIR" ]]; then
+    echo "==> Exporting webp-express..."
+    tar -czf "$DATA_DIR/webp-express.tar.gz" -C "$APPROOT" web/wp-content/webp-express
+    echo "    Saved: init/data/webp-express.tar.gz"
+else
+    echo "==> webp-express not found in web/wp-content, skipping..."
+fi
+
+echo ""
+echo "Init data generation complete. Files ready for production deployment via Deployer."

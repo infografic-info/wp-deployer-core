@@ -1,0 +1,188 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+// ---------------------------------------------------------------------------
+// Binario do pacote (vendor/bin/sync-templates).
+// - Origem dos templates: relativa ao proprio script, dentro do pacote.
+// - Raiz do consumidor: diretorio de trabalho atual (composer run-script roda
+//   a partir da raiz do projeto), com fallback opcional via --root=PATH.
+// ---------------------------------------------------------------------------
+$force = in_array('--force', $argv, true);
+
+$rootArg = null;
+foreach ($argv as $arg) {
+    if (str_starts_with($arg, '--root=')) {
+        $rootArg = substr($arg, strlen('--root='));
+        break;
+    }
+}
+
+$root = $rootArg !== null ? rtrim($rootArg, '/') : getcwd();
+
+if ($root === false || !is_dir($root)) {
+    fwrite(STDERR, "[ERROR] Raiz do projeto invalida: '{$root}'.\n");
+    exit(1);
+}
+
+if (!is_file($root . '/composer.json')) {
+    fwrite(STDERR, "[ERROR] composer.json nao encontrado em {$root}.\n");
+    fwrite(STDERR, "        Rode a partir da raiz do projeto ou informe --root=CAMINHO.\n");
+    exit(1);
+}
+
+$templatesRoot = dirname(__DIR__) . '/templates';
+
+if (!is_dir($templatesRoot)) {
+    fwrite(STDERR, "[ERROR] Templates do pacote nao encontrados em {$templatesRoot}\n");
+    fwrite(STDERR, "        Rode composer install/update antes de sincronizar.\n");
+    exit(1);
+}
+
+// ---------------------------------------------------------------------------
+// Detecta PROJECT_TYPE do ambiente ou do .env do projeto
+// ---------------------------------------------------------------------------
+$projectType = getenv('PROJECT_TYPE') ?: null;
+
+if ($projectType === null && is_file($root . '/.env')) {
+    foreach (file($root . '/.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
+        if (str_starts_with(trim($line), 'PROJECT_TYPE=')) {
+            $projectType = trim(explode('=', $line, 2)[1] ?? '', " \t\"'");
+            break;
+        }
+    }
+}
+
+$projectType = $projectType ?: 'bedrock';
+
+if (!in_array($projectType, ['bedrock', 'native'], true)) {
+    fwrite(STDERR, "[ERROR] PROJECT_TYPE invalido: '{$projectType}'. Use 'bedrock' ou 'native'.\n");
+    exit(1);
+}
+
+echo "[INFO]   PROJECT_TYPE={$projectType}\n";
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+$summary = ['updated' => 0, 'created' => 0, 'skipped' => 0, 'missing' => 0];
+
+function ensureDir(string $path): void {
+    $dir = dirname($path);
+    if (!is_dir($dir)) {
+        mkdir($dir, 0775, true);
+    }
+}
+
+function sameFile(string $a, string $b): bool {
+    return is_file($a) && is_file($b) && md5_file($a) === md5_file($b);
+}
+
+function syncFile(string $source, string $target, bool $force, array &$summary): void {
+    if (!is_file($source)) {
+        fwrite(STDERR, "[WARN] Template ausente: {$source}\n");
+        $summary['missing']++;
+        return;
+    }
+
+    if (!file_exists($target)) {
+        ensureDir($target);
+        copy($source, $target);
+        echo "[CREATE] {$target}\n";
+        $summary['created']++;
+        return;
+    }
+
+    if (sameFile($source, $target)) {
+        echo "[SKIP]   {$target} (sem alteracoes)\n";
+        $summary['skipped']++;
+        return;
+    }
+
+    if (!$force) {
+        echo "[SKIP]   {$target} (conteudo diferente; use --force para sobrescrever)\n";
+        $summary['skipped']++;
+        return;
+    }
+
+    copy($source, $target);
+    echo "[UPDATE] {$target}\n";
+    $summary['updated']++;
+}
+
+function syncDirectory(string $sourceDir, string $targetDir, bool $force, array &$summary): void {
+    if (!is_dir($sourceDir)) {
+        fwrite(STDERR, "[WARN] Template dir ausente: {$sourceDir}\n");
+        $summary['missing']++;
+        return;
+    }
+
+    $it = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($sourceDir, FilesystemIterator::SKIP_DOTS)
+    );
+
+    foreach ($it as $entry) {
+        if (!$entry->isFile()) {
+            continue;
+        }
+
+        $src = $entry->getPathname();
+        $rel = substr($src, strlen($sourceDir) + 1);
+        $dst = rtrim($targetDir, '/') . '/' . $rel;
+        syncFile($src, $dst, $force, $summary);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 1. Arquivos comuns (iguais para todos os tipos)
+// ---------------------------------------------------------------------------
+$commonDir = $templatesRoot . '/common';
+
+syncFile(
+    $templatesRoot . '/common/workflows/production.yml.example',
+    $root . '/.github/workflows/production.yml',
+    $force,
+    $summary
+);
+syncFile(
+    $templatesRoot . '/common/workflows/staging.yml.example',
+    $root . '/.github/workflows/staging.yml',
+    $force,
+    $summary
+);
+
+syncDirectory(
+    $commonDir . '/ddev-commands',
+    $root . '/.ddev/commands',
+    $force,
+    $summary
+);
+
+// ---------------------------------------------------------------------------
+// 2. Arquivos específicos do tipo de projeto
+// ---------------------------------------------------------------------------
+$typeDir = $templatesRoot . '/' . $projectType;
+
+syncFile(
+    $typeDir . '/.gitattributes.example',
+    $root . '/.gitattributes',
+    $force,
+    $summary
+);
+
+syncDirectory(
+    $typeDir . '/ddev-commands',
+    $root . '/.ddev/commands',
+    $force,
+    $summary
+);
+
+// ---------------------------------------------------------------------------
+echo "\nResumo:\n";
+echo "- criados: {$summary['created']}\n";
+echo "- atualizados: {$summary['updated']}\n";
+echo "- ignorados: {$summary['skipped']}\n";
+echo "- ausentes: {$summary['missing']}\n";
+
+echo "\nDica: use --force para aplicar update completo dos templates.\n";

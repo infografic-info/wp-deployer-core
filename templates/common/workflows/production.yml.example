@@ -1,0 +1,56 @@
+name: Deploy to Production
+
+on:
+  # push:
+  #   branches:
+  #     - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: [self-hosted, deployer, production]
+
+    env:
+      PROD_IP: ${{ secrets.PROD_IP }}
+      PROD_PORT: ${{ secrets.PROD_PORT }}
+      PROD_DOMAIN: ${{ vars.PROD_DOMAIN }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install project dependencies
+        env:
+          COMPOSER_AUTH: ${{ secrets.COMPOSER_AUTH }}
+        run: |
+          composer install --prefer-dist --optimize-autoloader
+
+      - name: Add server to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H -p $PROD_PORT $PROD_IP >> ~/.ssh/known_hosts
+
+      - name: Deploy with Deployer
+        run: |
+          dep --file=deploy.php deploy production
+
+
+  notify:
+    name: Notification
+    runs-on: [self-hosted, deployer, production]
+
+    env:
+      DOMAIN: ${{ vars.PROD_DOMAIN }}
+
+    needs: deploy
+    if: always()
+
+    steps:
+    - name: Deploy status
+      run: |
+        if [ "${{ needs.deploy.result }}" == "success" ]; then
+          echo "✅ Deployment successful: https://$DOMAIN"
+        else
+          echo "❌ Deployment failed"
+        fi

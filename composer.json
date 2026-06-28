@@ -1,0 +1,19 @@
+{
+    "name": "infografic/wp-deployer-core",
+    "description": "Reusable Deployer core for WordPress (Bedrock and Native) with EasyEngine provisioning",
+    "type": "library",
+    "license": "MIT",
+    "version": "0.0.0",
+    "bin": ["bin/sync-templates"],
+    "authors": [
+        {
+            "name": "Infografic",
+            "email": "dev@infografic.dev.br"
+        }
+    ],
+    "require": {
+        "php": ">=8.3",
+        "deployer/deployer": "^8.0",
+        "oscarotero/env": "^2.1"
+    }
+}

@@ -1,0 +1,41 @@
+# Template source: deploy package templates
+# Keep this file versioned in each project.
+# Suggested sync marker: DEPLOY_TEMPLATES_VERSION in .env or CI vars.
+
+# Exclude dev-only directories from deployment archives
+.ddev/ export-ignore
+.github/ export-ignore
+.vscode/ export-ignore
+
+# Dev tooling
+.cz.toml export-ignore
+phpcs.xml export-ignore
+pint.json export-ignore
+scripts/ export-ignore
+
+# Git and env files
+.gitignore export-ignore
+.gitattributes export-ignore
+.tag.versions export-ignore
+
+# Project-specific setup files
+init/ export-ignore
+deploy/ export-ignore
+deploy.php export-ignore
+web/wp-config.php export-ignore
+
+# Composer files
+composer.lock export-ignore
+wp-translation-downloader.lock export-ignore
+
+# Premium artifacts versioned in git (not available on Composer).
+# They are shipped by deploy:upload_vendors to avoid duplicates.
+
+# Docs and license
+LICENSE export-ignore
+LICENSE.md export-ignore
+README.md export-ignore
+CLAUDE.md export-ignore
+
+# Normalize line endings
+* text=auto eol=lf

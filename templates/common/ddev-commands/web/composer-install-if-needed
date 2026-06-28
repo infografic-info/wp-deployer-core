@@ -1,0 +1,23 @@
+#!/bin/bash
+#ddev-silent-no-warn
+## Description: Executa composer install caso vendor/ ou composer.lock estejam ausentes
+## Usage: composer-install-if-needed
+
+set -euo pipefail
+
+VENDOR_DIR="/var/www/html/vendor"
+COMPOSER_FILE="/var/www/html/composer.json"
+LOCK_FILE="/var/www/html/composer.lock"
+
+if [ ! -f "$COMPOSER_FILE" ]; then
+  echo "composer.json not found. Skipping composer install."
+  exit 0
+fi
+
+if [ -f "$LOCK_FILE" ] && [ -d "$VENDOR_DIR" ]; then
+  echo "Vendor directory and composer.lock already exist. Skipping composer install."
+  exit 0
+fi
+
+echo "Vendor directory missing. Running composer install..."
+composer install --no-interaction --prefer-dist --no-progress
